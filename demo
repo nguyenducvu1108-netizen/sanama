@@ -1377,32 +1377,58 @@ end)
 --// FIXED Body Velocity - No Error Version (UPDATED WITH HALLOWEEN)
 spawn(function()
     local Noclip = nil
-    while wait(0.1) do  -- Thêm delay để giảm tải
+    local hbConn = nil
+    local RunService = game:GetService("RunService")
+
+    -- smoothing rate: higher = faster correction, lower = smoother
+    local SMOOTH_RATE = 12 -- tuned value (frames per second effect)
+
+    while task.wait(0.12) do
         pcall(function()
-            -- Kiểm tra xem character có tồn tại không
             local player = game:GetService("Players").LocalPlayer
-            if not player or not player.Character then return end
-            
+            if not player or not player.Character then
+                -- cleanup if character missing
+                if hbConn then hbConn:Disconnect() hbConn = nil end
+                if Noclip then Noclip:Destroy() Noclip = nil end
+                return
+            end
+
             local character = player.Character
             local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
             if not humanoidRootPart then return end
 
             local enabled = AutoSTartRaids or TeleporttoFruitDealer or _G.TeleportFruit or TeleporttoKitsune or CollectAzureAmber or AutoTrain or AutoKillHuman or AutoPirateCastle or TweenToPlayer or AutoSail or AutoFarmTerrorShark or AutoFarmFish or AutoFarmSeaBeast or AutoFarmGhostBoats or LevelFarmNoQuest or LevelFarmQuest or Farm_Bone or Farm_Ectoplasm or Nearest_Farm or SelectMonster_Quest_Farm or SelectMonster_NoQuest_Farm or Auto_Farm_Material or AutoFarmBossNoQuest or AutoFarmBossQuest or GunMastery_Farm or DevilMastery_Farm or AutoKenV2 or AutoFarmKen or AutoNextIsland or BossRaid or _G.Teleport_to_Player or _G.Clip or _G.Auto_Kill_Player_Melee or _G.Auto_Kill_Player_Gun or TeleporttoMirage or TeleporttoGear or _G.Auto_Teleport_Fruit or AutoSecondWorld or AutoThirdWorld or AutoDeathStep or AutoSuperhuman or AutoSharkman or AutoElectricClaw or AutoDragonTalon or AutoGodhuman or AutoSaber or AutoRengoku or AutoBuddySword or AutoPole or AutoYama or AutoCavander or AutoTushita or Auto_Cursed_Dual_Katana or Auto_Quest_Yama_1 or Auto_Quest_Yama_2 or Auto_Quest_Yama_3 or Auto_Quest_Tushita_1 or Auto_Quest_Tushita_2 or Auto_Quest_Tushita_3 or AutoEliteHunter or AutoCakePrince or _G.AutoDoughKing or AutoDarkDagger or AutoHallowSycthe or AutoCitizen or AutoEvoRace or AutoBartilo or AutoFactory or _G.SwanGlasses or RipIndra or AutoRainbowHaki or AutoTorch or AutoSoulGuitar or AutoTryLuck or AutoPray or AutoAdvanceDungeon or AutoMusketeer or Auto_Serpent_Bow or _G.AutoHalloweenEvent or AutoTyrant
-            
+
             if enabled then
+                -- ensure we have BodyVelocity and a heartbeat updater
                 if not Noclip then
-                    -- Sử dụng BodyVelocity thay vì BodyPosition
                     Noclip = Instance.new("BodyVelocity")
                     Noclip.Name = "BodyClip"
+                    Noclip.MaxForce = Vector3.new(1e8, 1e8, 1e8) -- plenty of force
+                    Noclip.Velocity = Vector3.new(0, 0, 0)
                     Noclip.Parent = humanoidRootPart
-                    Noclip.MaxForce = Vector3.new(100000, 100000, 100000)
-                    Noclip.Velocity = Vector3.new(0, 0, 0)
                 else
-                    -- Cập nhật liên tục để tránh rơi
-                    Noclip.Velocity = Vector3.new(0, 0, 0)
-                    Noclip.Parent = humanoidRootPart -- Đảm bảo parent luôn đúng
+                    -- reparent if part changed
+                    if Noclip.Parent ~= humanoidRootPart then
+                        Noclip.Parent = humanoidRootPart
+                    end
+                end
+
+                -- connect heartbeat only once
+                if not hbConn then
+                    hbConn = RunService.Heartbeat:Connect(function(dt)
+                        if not Noclip or not Noclip.Parent then return end
+                        -- smooth-lerp toward zero velocity for stable hovering
+                        -- compute alpha based on dt for frame-rate independence
+                        local alpha = 1 - math.exp(-SMOOTH_RATE * dt)
+                        -- keep horizontal + vertical damping
+                        local target = Vector3.new(0, 0, 0)
+                        Noclip.Velocity = Noclip.Velocity:Lerp(target, alpha)
+                    end)
                 end
             else
+                -- disable
+                if hbConn then hbConn:Disconnect() hbConn = nil end
                 if Noclip then
                     Noclip:Destroy()
                     Noclip = nil
@@ -4052,41 +4078,29 @@ Other_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
 end)
 
 --// Bone Farm
--- Thêm các dòng khai báo này ở đầu
-local Farm_Bone = getgenv().Farm_Bone or false
+local Bone_Farm = Other_Farm:addMenu('#Bones Farm (Third Sea)')
 
-local Bone_Farm = Other_Farm:addMenu('Bones Farm (Third Sea)')
-local BoneStatus = Bone_Farm:addLabel('Status: Off')
-
--- Toggle cho farm bone
-Bone_Farm:addToggle('Enable Farm', Farm_Bone, function(Value)
-    Farm_Bone = Value
-    getgenv().Farm_Bone = Value
-    if not Value then
-        CancelTween(Farm_Bone)
-    end
-end)
-
--- Toggle cho quest
 getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
-Bone_Farm:addToggle('Auto Accept Quest', getgenv().BoneFarmWithQuest, function(Value)
+getgenv().BoneFarmWithoutQuest = getgenv().BoneFarmWithoutQuest or false
+Farm_Bone = Farm_Bone or false
+
+Bone_Farm:addToggle('Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
     getgenv().BoneFarmWithQuest = Value
 end)
 
--- Cập nhật status
-spawn(function()
-    while task.wait(1) do
-        if Farm_Bone then
-            BoneStatus:Refresh('Status: Farming Bones...')
-        else
-            BoneStatus:Refresh('Status: Off')
-        end
-    end
+Bone_Farm:addToggle('Farm Without Quest', getgenv().BoneFarmWithoutQuest, function(Value)
+    getgenv().BoneFarmWithoutQuest = Value
+end)
+
+Bone_Farm:addToggle('Auto Farm Bones', Farm_Bone, function(Value)
+    Farm_Bone = Value
+    CancelTween(Farm_Bone)
 end)
 
 local LastAcceptTime = 0
 local ACCEPT_COOLDOWN = 2 -- giây
 
+-- Function to accept the Bone/Haunted quest (uses the HauntedQuest2 details)
 local function AcceptBoneQuest()
     if tick() - LastAcceptTime < ACCEPT_COOLDOWN then return end
     LastAcceptTime = tick()
@@ -4149,7 +4163,6 @@ local function AcceptBoneQuest()
     end
 end
 
--- Main farm loop
 spawn(function()
     while task.wait() do
         if Farm_Bone then
@@ -4162,31 +4175,21 @@ spawn(function()
 
                 local boneframe = CFrame.new(-9508.5673828125, 142.1398468017578, 5737.3603515625)
                 
-                -- Check if there are any target enemies in workspace
-                local hasTargetEnemies = false
-                for i,v in pairs(game.Workspace.Enemies:GetChildren()) do
-                    if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-                        if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name =="Demonic Soul" or v.Name == "Posessed Mummy" then
-                            hasTargetEnemies = true
-                            break
-                        end
-                    end
-                end
-
-                -- If no target enemies in workspace, go to bone farming area
-                if not hasTargetEnemies then
+                -- Check if we should farm with or without quest
+                if getgenv().BoneFarmWithQuest or getgenv().BoneFarmWithoutQuest then
                     if ByPassTP then
                         BTP(boneframe)
-                    else
+                    elseif not ByPassTP then
                         Tween(boneframe)
                     end
                 end
 
-                -- Attack enemies in workspace
+                -- Farm enemies in workspace
                 for i,v in pairs(game.Workspace.Enemies:GetChildren()) do
                     if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                         if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name =="Demonic Soul" or v.Name == "Posessed Mummy" then
-                            repeat game:GetService("RunService").Heartbeat:wait()
+                            repeat 
+                                game:GetService("RunService").Heartbeat:wait()
                                 EquipTool(SelectWeapon)
                                 Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
                                 v.HumanoidRootPart.CanCollide = false
@@ -4200,22 +4203,11 @@ spawn(function()
                     end
                 end
 
-                -- If no enemies in workspace, check replicated storage
-                local hasEnemiesInWorkspace = false
-                for i,v in pairs(game.Workspace.Enemies:GetChildren()) do
-                    if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
-                        hasEnemiesInWorkspace = true
-                        break
-                    end
-                end
-
-                if not hasEnemiesInWorkspace then
-                    for i,v in pairs(game:GetService("ReplicatedStorage"):GetChildren()) do
-                        if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
-                            if v:FindFirstChild("HumanoidRootPart") then
-                                Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
-                                wait(1)
-                            end
+                -- Farm enemies in replicated storage (spawned enemies)
+                for i,v in pairs(game:GetService("ReplicatedStorage"):GetChildren()) do
+                    if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
+                        if v:FindFirstChild("HumanoidRootPart") then
+                            Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
                         end
                     end
                 end
