@@ -1666,38 +1666,46 @@ local function FastAttackOptimized()
             task.wait(0.01)
         end
         pcall(function()
+            -- Try to fetch CombatFramework and active controller, but don't bail out
+            -- if it's not available yet. We still want to call AttackHit so the
+            -- fast-attack firing isn't blocked by the controller state.
             local ok, CombatFramework = pcall(function() return require(Player.PlayerScripts.CombatFramework) end)
-            if not ok or not CombatFramework then return end
-            local CombatFrameworkLib = debug.getupvalues(CombatFramework)
-            local CF = CombatFrameworkLib[2]
-            local AC = CF.activeController
-            if not AC then return end
-
-            -- Reset attack cooldowns and make controller ready
-            AC.timeToNextAttack = 0
-            AC.timeToNextBlock = 0
-            AC.focusStart = 0
-            AC.attacking = false
-            AC.blocking = false
-            AC.increment = 6 -- increase attack increment for faster sequences
-
-            -- Enable auto rotate
-            if AC.humanoid then
-                AC.humanoid.AutoRotate = true
+            local AC = nil
+            if ok and CombatFramework then
+                local ok2, upvals = pcall(function() return debug.getupvalues(CombatFramework) end)
+                if ok2 and type(upvals) == 'table' and upvals[2] then
+                    AC = upvals[2].activeController
+                end
             end
 
-            -- Reset attack track
-            if AC.currentAttackTrack then
-                AC.currentAttackTrack = 0
+            if AC then
+                -- Reset attack cooldowns and make controller ready
+                AC.timeToNextAttack = 0
+                AC.timeToNextBlock = 0
+                AC.focusStart = 0
+                AC.attacking = false
+                AC.blocking = false
+                AC.increment = 6 -- increase attack increment for faster sequences
+
+                -- Enable auto rotate
+                if AC.humanoid then
+                    AC.humanoid.AutoRotate = true
+                end
+
+                -- Reset attack track
+                if AC.currentAttackTrack then
+                    AC.currentAttackTrack = 0
+                end
+
+                -- Set hitbox magnitude using config
+                AC.hitboxMagnitude = (MultiTargetRadius and tonumber(MultiTargetRadius)) or 100
+
+                -- Increase simulation radius for hit registration
+                pcall(function() sethiddenproperty(Player, 'SimulationRadius', math.huge) end)
             end
 
-            -- Set hitbox magnitude using config
-            AC.hitboxMagnitude = (MultiTargetRadius and tonumber(MultiTargetRadius)) or 100
-
-            -- Increase simulation radius for hit registration
-            pcall(function() sethiddenproperty(Player, 'SimulationRadius', math.huge) end)
-
-            -- Execute attack (spawn to avoid blocking)
+            -- Always attempt to perform the AttackHit routine; this avoids
+            -- depending on AutoV3 or other state that only makes the controller appear.
             task.spawn(AttackHit)
         end)
     end
