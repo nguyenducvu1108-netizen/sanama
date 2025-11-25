@@ -4052,27 +4052,34 @@ Other_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
 end)
 
 --// Bone Farm
-local Bone_Farm = Other_Farm:addMenu('#Bones Farm (Third Sea)')
-local BoneStatus = Bone_Farm:addLabel("")
+-- Thêm các dòng khai báo này ở đầu
+local Farm_Bone = getgenv().Farm_Bone or false
 
-getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
-Farm_Bone = Farm_Bone or false
+local Bone_Farm = Other_Farm:addMenu('Bones Farm (Third Sea)')
+local BoneStatus = Bone_Farm:addLabel('Status: Off')
 
-Bone_Farm:addToggle('Bones Farm', Farm_Bone, function(Value)
+-- Toggle cho farm bone
+Bone_Farm:addToggle('Enable Farm', Farm_Bone, function(Value)
     Farm_Bone = Value
-    CancelTween(Farm_Bone)
+    getgenv().Farm_Bone = Value
+    if not Value then
+        CancelTween(Farm_Bone)
+    end
 end)
 
-Bone_Farm:addToggle('Bone Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
+-- Toggle cho quest
+getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
+Bone_Farm:addToggle('Auto Accept Quest', getgenv().BoneFarmWithQuest, function(Value)
     getgenv().BoneFarmWithQuest = Value
 end)
 
+-- Cập nhật status
 spawn(function()
     while task.wait(1) do
         if Farm_Bone then
-            BoneStatus:Refresh("Bone Farm: ON")
+            BoneStatus:Refresh('Status: Farming Bones...')
         else
-            BoneStatus:Refresh("Bone Farm: OFF")
+            BoneStatus:Refresh('Status: Off')
         end
     end
 end)
@@ -4142,6 +4149,7 @@ local function AcceptBoneQuest()
     end
 end
 
+-- Main farm loop
 spawn(function()
     while task.wait() do
         if Farm_Bone then
