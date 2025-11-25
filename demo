@@ -1558,55 +1558,51 @@ Main_Setting:addTextbox("Distance Farm", DisFarm, function(Value)
 end)
 
 -- ====================================================
--- COMPLETE BLOX FRUITS SCRIPT 2025 (OPTIMIZED VERSION)
+-- FAST ATTACK SYSTEM 2025 (OPTIMIZED VERSION)
 -- ====================================================
 
 local Player = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
-
--- UI Library (Assuming you have a UI library)
-local Main_Setting = {} -- Replace with your actual UI library
-
--- ==================== CONFIGURATION ====================
-getgenv().Settings = {
-    FastAttack = true,
-    FastAttackDelay = 0.175,
-    MultiTargetRadius = 150,
-    AttackBurst = 3,
-    UseHeartbeatAttack = true,
-    BringMobs = false,
-    BringMobsDistance = 250,
-    NoClip = false,
-    AutoSetSpawn = true,
-    BypassTP = true
-}
-
--- ==================== COMBAT SYSTEM ====================
 
 -- Camera Shaker Stop
 local CameraShaker = require(ReplicatedStorage.Util.CameraShaker)
 CameraShaker:Stop()
 
 -- Get Blade Hit Function
+-- Fast Attack configuration (tweakable)
+-- Unified FastAttack control: single global flag (getgenv().FastAttack) is authoritative.
+getgenv().FastAttack = getgenv().FastAttack or true
+
+-- Guard to ensure we only run a single FastAttackOptimized loop at a time
+local _fastAttackLoopRunning = false
+local function startFastAttackLoop()
+    if _fastAttackLoopRunning then return end
+    _fastAttackLoopRunning = true
+    task.spawn(function()
+        -- loop will exit when getgenv().FastAttack is false
+        FastAttackOptimized()
+        _fastAttackLoopRunning = false
+    end)
+end
+-- Aggressive multi-target defaults (tweakable via UI)
+local MultiTargetRadius = 150 -- how far to search enemies for multi-hit
+local AttackBurst = 3        -- how many hit events to send per cycle
+local UseHeartbeatAttack = true -- try to align attacks with Heartbeat
+
+-- Get Blade Hit Function (safe)
 function GetBladeHit()
     local ok, CombatFrameworkLib = pcall(function()
         return debug.getupvalues(require(Player.PlayerScripts.CombatFramework))
     end)
     if not ok or not CombatFrameworkLib then return nil end
-    
     local CmrFwLib = CombatFrameworkLib[2]
     local p13 = CmrFwLib.activeController
     local weapon = nil
-    
     pcall(function()
         weapon = p13 and p13.blades and p13.blades[1]
     end)
-    
     if not weapon then return nil end
-    
     while weapon and weapon.Parent and weapon.Parent ~= Player.Character do
         task.wait()
         weapon = weapon.Parent
@@ -1614,30 +1610,26 @@ function GetBladeHit()
     return weapon
 end
 
--- Attack Hit Function (Multi-Target)
+-- Attack Hit Function
 function AttackHit()
+    -- Build a target list of nearby enemy parts (HumanoidRootPart / Head)
     local targets = {}
     local playerHRP = Player.Character and Player.Character:FindFirstChild('HumanoidRootPart')
     if not playerHRP then return end
 
-    -- Find nearby enemies
     for _, v in pairs(workspace:FindFirstChild('Enemies') and workspace.Enemies:GetChildren() or {}) do
         if v and v:FindFirstChild('Humanoid') and v.Humanoid.Health > 0 and v:FindFirstChild('HumanoidRootPart') then
             local part = v:FindFirstChild('HumanoidRootPart') or v:FindFirstChild('Head')
-            if part and (part.Position - playerHRP.Position).Magnitude <= Settings.MultiTargetRadius then
+            if part and (part.Position - playerHRP.Position).Magnitude <= (MultiTargetRadius or 100) then
                 table.insert(targets, part)
             end
         end
     end
 
-    -- Fallback to RigLib detection
     if #targets == 0 then
+        -- fallback to RigLib detection if nothing found
         local ok, bladehit = pcall(function()
-            return require(ReplicatedStorage.CombatFramework.RigLib).getBladeHits(
-                Player.Character, 
-                {playerHRP}, 
-                Settings.MultiTargetRadius
-            )
+            return require(ReplicatedStorage.CombatFramework.RigLib).getBladeHits(Player.Character, {playerHRP}, MultiTargetRadius or 100)
         end)
         if ok and bladehit and #bladehit > 0 then
             local uniq = {}
@@ -1650,72 +1642,74 @@ function AttackHit()
         end
     end
 
-    -- Execute attack
     if #targets > 0 then
         pcall(function()
             local weapon = GetBladeHit()
             ReplicatedStorage.RigControllerEvent:FireServer('weaponChange', tostring(weapon))
 
-            for i = 1, Settings.AttackBurst do
+            -- Send bursts quickly to simulate multi-target multi-hit like premium hubs
+            for i = 1, (AttackBurst or 1) do
                 ReplicatedStorage.RigControllerEvent:FireServer('hit', targets, 1, '')
-                task.wait(Settings.AttackBurst > 4 and 0.01 or 0.007)
+                -- tiny yield to avoid stalls and allow server processing
+                task.wait(AttackBurst > 4 and 0.01 or 0.007)
             end
         end)
     end
 end
 
--- Optimized Fast Attack Function
+-- Optimized Fast Attack Function 2025
 local function FastAttackOptimized()
-    while Settings.FastAttack do
-        if Settings.UseHeartbeatAttack then
-            task.wait(0)
+    while getgenv().FastAttack do
+        if UseHeartbeatAttack then
+            task.wait(0) -- yield to heartbeat
         else
             task.wait(0.01)
         end
-        
         pcall(function()
-            local ok, CombatFramework = pcall(function() 
-                return require(Player.PlayerScripts.CombatFramework) 
-            end)
+            local ok, CombatFramework = pcall(function() return require(Player.PlayerScripts.CombatFramework) end)
             if not ok or not CombatFramework then return end
-            
             local CombatFrameworkLib = debug.getupvalues(CombatFramework)
             local CF = CombatFrameworkLib[2]
             local AC = CF.activeController
             if not AC then return end
 
-            -- Reset combat state
+            -- Reset attack cooldowns and make controller ready
             AC.timeToNextAttack = 0
             AC.timeToNextBlock = 0
             AC.focusStart = 0
             AC.attacking = false
             AC.blocking = false
-            AC.increment = 6
-            AC.hitboxMagnitude = Settings.MultiTargetRadius
+            AC.increment = 6 -- increase attack increment for faster sequences
 
             -- Enable auto rotate
             if AC.humanoid then
                 AC.humanoid.AutoRotate = true
             end
 
-            -- Increase simulation radius
-            pcall(function() 
-                sethiddenproperty(Player, 'SimulationRadius', math.huge) 
-            end)
+            -- Reset attack track
+            if AC.currentAttackTrack then
+                AC.currentAttackTrack = 0
+            end
 
-            -- Execute attack
+            -- Set hitbox magnitude using config
+            AC.hitboxMagnitude = (MultiTargetRadius and tonumber(MultiTargetRadius)) or 100
+
+            -- Increase simulation radius for hit registration
+            pcall(function() sethiddenproperty(Player, 'SimulationRadius', math.huge) end)
+
+            -- Execute attack (spawn to avoid blocking)
             task.spawn(AttackHit)
         end)
     end
 end
 
--- Gun Fast Attack
+-- Gun Fast Attack Function
 function FastShooted()
-    local plr = Player
-    local ShootGunEvent = ReplicatedStorage.Modules.Net["RE/ShootGunEvent"]
+    local plr = game:GetService("Players").LocalPlayer
+    local ShootGunEvent = game:GetService("ReplicatedStorage").Modules.Net["RE/ShootGunEvent"]
     
-    for _, v in pairs(workspace.Enemies:GetChildren()) do
-        if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
+    for i,v in pairs(game:GetService("Workspace").Enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("Humanoid").Health > 0 then
             local toolEquiped = plr.Character:FindFirstChildOfClass("Tool")
             if (v.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude < 50 then
                 if toolEquiped and toolEquiped.ToolTip == "Gun" then
@@ -1726,191 +1720,52 @@ function FastShooted()
     end
 end
 
--- Blox Fruit Skills
+-- Melee/Sword Fast Attack Function
+function FastAttacked()
+    local plr = game:GetService("Players").LocalPlayer
+    -- Use AttackHit multi-target routine instead for better hit registration
+    pcall(function()
+        local toolEquiped = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+        if toolEquiped and (toolEquiped.ToolTip == "Melee" or toolEquiped.ToolTip == "Sword") then
+            sethiddenproperty(plr, "SimulationRadius", math.huge)
+            AttackHit()
+        end
+    end)
+end
+
+-- Blox Fruit Attack Function
 function UseBloxFruit()
     pcall(function()
-        local tool = Player.Character:FindFirstChildOfClass("Tool")
+        local tool = game.Players.LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if tool and tool.ToolTip == "Blox Fruit" then
+            -- Auto use skills Z, X, C, V
             local skills = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.V}
             for _, key in pairs(skills) do
-                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                game:GetService("VirtualInputManager"):SendKeyEvent(true, key, false, game)
                 task.wait(0.1)
-                VirtualInputManager:SendKeyEvent(false, key, false, game)
+                game:GetService("VirtualInputManager"):SendKeyEvent(false, key, false, game)
                 task.wait(0.5)
             end
         end
     end)
 end
 
--- ==================== AUTO FARM SYSTEM ====================
+-- Get Head Function
+function getHead()
+    local returntable = {}
+    local plr = game:GetService("Players").LocalPlayer
+    for i,v in pairs(game:GetService("Workspace").Enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("Humanoid").Health > 0 then
+            if (v.Head.Position - plr.Character.HumanoidRootPart.Position).Magnitude < 70 then
+                table.insert(returntable, v.Head)
+            end
+        end
+    end
+    return returntable
+end
 
+-- Auto Attack System
 local AutoAttack = false
-local SelectWeaponFarm = "Melee" -- Default weapon
-
--- Auto Attack System
-function StartAutoAttack()
-    spawn(function()
-        while AutoAttack do
-            task.wait(Settings.FastAttackDelay)
-            
-            if SelectWeaponFarm == "Melee" or SelectWeaponFarm == "Sword" then
-                if Settings.FastAttack then
-                    AttackHit()
-                end
-            elseif SelectWeaponFarm == "Gun" then
-                FastShooted()
-            elseif SelectWeaponFarm == "Blox Fruit" then
-                UseBloxFruit()
-            end
-        end
-    end)
-end
-
--- ==================== MOB MANAGEMENT ====================
-
--- Bring Mobs Function
-function BringMonster(TargetName, TargetCFrame)
-    for _, v in pairs(workspace.Enemies:GetChildren()) do
-        if v.Name and string.lower(v.Name):find(string.lower(TargetName)) then
-            if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
-                local ok, plrHRP = pcall(function() 
-                    return Player.Character.HumanoidRootPart 
-                end)
-                if ok and plrHRP and (v.HumanoidRootPart.Position - plrHRP.Position).Magnitude < Settings.BringMobsDistance then
-                    pcall(function()
-                        v.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        TweenService:Create(v.HumanoidRootPart, TweenInfo.new(0.35, Enum.EasingStyle.Linear), {
-                            CFrame = TargetCFrame
-                        }):Play()
-                        v.HumanoidRootPart.CanCollide = false
-                        v.HumanoidRootPart.Size = Vector3.new(60, 60, 60)
-                        v.HumanoidRootPart.Transparency = 1
-                        v.Humanoid:ChangeState(11)
-                        if v.Humanoid:FindFirstChild("Animator") then
-                            v.Humanoid.Animator:Destroy()
-                        end
-                    end)
-                end
-            end
-        end
-    end
-    pcall(sethiddenproperty, Player, "SimulationRadius", math.huge)
-end
-
--- ==================== RACE TRANSFORMATIONS ====================
-
--- Auto V4 Function
-local AutoV4 = false
-spawn(function()
-    while task.wait(0.1) do
-        if AutoV4 then
-            pcall(function()
-                local playerGui = Player.PlayerGui
-                if playerGui and playerGui:FindFirstChild("Main") and playerGui.Main:FindFirstChild("RaceEnergy") then
-                    local raceEnergy = playerGui.Main.RaceEnergy
-                    if raceEnergy:FindFirstChild("Fill") and raceEnergy.Fill:FindFirstChild("Trans") then
-                        local trans = raceEnergy.Fill.Trans
-                        if trans.Size.X.Scale >= 1 then
-                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Y, false, game)
-                            task.wait(0.1)
-                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Y, false, game)
-                            task.wait(1)
-                        end
-                    end
-                end
-            end)
-        end
-    end
-end)
-
--- Auto V3 Function
-local AutoV3 = false
-spawn(function()
-    while task.wait(0.1) do
-        if AutoV3 then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.T, false, game)
-                task.wait(0.1)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.T, false, game)
-                task.wait(1)
-            end)
-        end
-    end
-end)
-
--- ==================== PLAYER UTILITIES ====================
-
--- No Clip System
-RunService.Stepped:Connect(function()
-    if Settings.NoClip and Player.Character then
-        for _, v in pairs(Player.Character:GetDescendants()) do
-            if v:IsA("BasePart") then
-                v.CanCollide = false
-            end
-        end
-    end
-end)
-
--- Auto Set Spawn
-spawn(function()
-    while wait() do
-        if Settings.AutoSetSpawn then
-            local current = Player.Data.LastSpawnPoint.Value
-            local args = {
-                [1] = "SetLastSpawnPoint",
-                [2] = current
-            }
-            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
-        end
-    end
-end)
-
--- ==================== UI SETTINGS ====================
-
--- Fast Attack Settings
-Main_Setting:addToggle('Fast Attack (Melee/Sword)', Settings.FastAttack, function(Value)
-    Settings.FastAttack = Value
-    if Settings.FastAttack then
-        task.spawn(FastAttackOptimized)
-    end
-end)
-
-Main_Setting:addToggle('Fast Attack (Gun)', false, function(Value)
-    getgenv().FastShot = Value
-end)
-
--- Attack Configuration
-Main_Setting:addTextbox('MultiTarget Radius', Settings.MultiTargetRadius, function(Value)
-    Settings.MultiTargetRadius = tonumber(Value) or Settings.MultiTargetRadius
-end)
-
-Main_Setting:addTextbox('Attack Burst', Settings.AttackBurst, function(Value)
-    Settings.AttackBurst = tonumber(Value) or Settings.AttackBurst
-end)
-
--- Attack Delay Dropdown
-local AttackList = {"0.100 (Risk)", "0.165", "0.175 (Default)", "0.185", "0.200", "0.300", "0.500", "0.700 (Slow)"}
-Main_Setting:addDropdown("Fast Attack Delay", "0.175 (Default)", AttackList, function(Value)
-    if Value == "0.100 (Risk)" then
-        Settings.FastAttackDelay = 0.1
-    elseif Value == "0.165" then
-        Settings.FastAttackDelay = 0.165
-    elseif Value == "0.175 (Default)" then
-        Settings.FastAttackDelay = 0.175
-    elseif Value == "0.185" then
-        Settings.FastAttackDelay = 0.185
-    elseif Value == "0.200" then
-        Settings.FastAttackDelay = 0.2
-    elseif Value == "0.300" then
-        Settings.FastAttackDelay = 0.3
-    elseif Value == "0.500" then
-        Settings.FastAttackDelay = 0.5
-    elseif Value == "0.700 (Slow)" then
-        Settings.FastAttackDelay = 0.7
-    end
-end)
-
--- Auto Attack System
 Main_Setting:addToggle('Auto Attack System', AutoAttack, function(Value)
     AutoAttack = Value
     if AutoAttack then
@@ -1918,61 +1773,74 @@ Main_Setting:addToggle('Auto Attack System', AutoAttack, function(Value)
     end
 end)
 
--- Weapon Selection
-local WeaponList = {"Melee", "Sword", "Gun", "Blox Fruit"}
-Main_Setting:addDropdown("Select Weapon", SelectWeaponFarm, WeaponList, function(Value)
-    SelectWeaponFarm = Value
+function StartAutoAttack()
+    spawn(function()
+        while AutoAttack do
+            task.wait(FastAttackDelay or 0.175)
+            
+            if SelectWeaponFarm == "Melee" or SelectWeaponFarm == "Sword" then
+                if getgenv().FastAttack then
+                    FastAttacked()
+                end
+            elseif SelectWeaponFarm == "Gun" then
+                if FastShot then
+                    FastShooted()
+                end
+            elseif SelectWeaponFarm == "Blox Fruit" then
+                UseBloxFruit()
+            end
+        end
+    end)
+end
+
+-- Fast Attack Toggles
+-- Keep UI variable in sync with authoritative global flag
+FastAttack = getgenv().FastAttack
+Main_Setting:addToggle('Fast Attack (Melee and Sword)', FastAttack, function(Value)
+    -- Update both the local/UI variable and the global flag so all code paths agree
+    FastAttack = Value
+    getgenv().FastAttack = Value
+    if Value then
+        startFastAttackLoop()
+    end
 end)
 
--- Mob Bringing
-Main_Setting:addToggle("Bring Mobs", Settings.BringMobs, function(Value)
-    Settings.BringMobs = Value
+FastShot = false
+Main_Setting:addToggle('Fast Attack (Gun)', FastShot, function(Value)
+    FastShot = Value
 end)
 
-Main_Setting:addTextbox("Bring Distance", Settings.BringMobsDistance, function(Value)
-    Settings.BringMobsDistance = tonumber(Value) or Settings.BringMobsDistance
+-- Fast Attack tuning (multi-target)
+Main_Setting:addTextbox('MultiTarget Radius', MultiTargetRadius, function(Value)
+    MultiTargetRadius = tonumber(Value) or MultiTargetRadius
+    print('MultiTargetRadius set to', MultiTargetRadius)
 end)
 
--- Race Transformations
-Main_Setting:addToggle('Auto V4', AutoV4, function(Value)
-    AutoV4 = Value
+Main_Setting:addTextbox('Attack Burst (hits)', AttackBurst, function(Value)
+    AttackBurst = tonumber(Value) or AttackBurst
+    print('AttackBurst set to', AttackBurst)
 end)
 
-Main_Setting:addToggle('Auto V3', AutoV3, function(Value)
-    AutoV3 = Value
+Main_Setting:addToggle('Use Heartbeat Attack', UseHeartbeatAttack, function(Value)
+    UseHeartbeatAttack = Value
 end)
 
--- Utilities
-Main_Setting:addToggle("No Clip", Settings.NoClip, function(Value)
-    Settings.NoClip = Value
-end)
-
-Main_Setting:addToggle("Bypass Teleport", Settings.BypassTP, function(Value)
-    Settings.BypassTP = Value
-end)
-
-Main_Setting:addToggle('Auto Set Spawn', Settings.AutoSetSpawn, function(Value)
-    Settings.AutoSetSpawn = Value
-end)
-
--- ==================== HEARTBEAT CONNECTIONS ====================
-
--- Fast Attack Heartbeat
+-- Heartbeat connections for fast attacks
 spawn(function()
     RunService.Heartbeat:Connect(function()
-        if Settings.FastAttack and (SelectWeaponFarm == "Melee" or SelectWeaponFarm == "Sword") then
+        if getgenv().FastAttack and (SelectWeaponFarm == "Melee" or SelectWeaponFarm == "Sword") then
             pcall(function()
                 CameraShaker:Stop()
+                -- call AttackHit directly to reduce overhead
                 AttackHit()
             end)
         end
     end)
 end)
 
--- Gun Attack Heartbeat
 spawn(function()
     RunService.Heartbeat:Connect(function()
-        if getgenv().FastShot and SelectWeaponFarm == "Gun" then
+        if FastShot and SelectWeaponFarm == "Gun" then
             pcall(function()
                 CameraShaker:Stop()
                 FastShooted()
@@ -1993,14 +1861,279 @@ spawn(function()
     end)
 end)
 
--- ==================== INITIALIZATION ====================
-
--- Start Fast Attack if enabled
-if Settings.FastAttack then
-    task.spawn(FastAttackOptimized)
+-- Player Attack Function
+function AttackToPlayers()
+    local plr = game:GetService("Players").LocalPlayer
+    local RegisterAttack = game:GetService("ReplicatedStorage").Modules.Net["RE/RegisterAttack"]
+    local RegisterHit = game:GetService("ReplicatedStorage").Modules.Net["RE/RegisterHit"]
+    
+    for i,v in pairs(game.Players:GetChildren()) do
+        if v ~= plr and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character:FindFirstChild("Humanoid").Health > 0 then
+            if (v.Character.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude < 50 then
+                local toolEquiped = plr.Character:FindFirstChildOfClass("Tool")
+                if toolEquiped and (toolEquiped.ToolTip == "Melee" or toolEquiped.ToolTip == "Sword") then
+                    RegisterAttack:FireServer(0.1)
+                    RegisterHit:FireServer(v.Character.Head, {})
+                end
+            end
+        end
+    end
 end
 
-print("Blox Fruits Script 2025 Loaded Successfully!")
+AttackToPlayersNow = false
+Main_Setting:addToggle('Attack Melee Player', AttackToPlayersNow, function(Value)
+    AttackToPlayersNow = Value
+end)
+
+spawn(function()
+    while task.wait() do
+        if AttackToPlayersNow then
+            CameraShaker:Stop()
+            pcall(function()
+                repeat task.wait()
+                    AttackToPlayers()
+                until not AttackToPlayersNow
+            end)
+        end
+    end
+end)
+
+-- Attack Delay Settings
+local AttackList = {"0.100 (Risk)", "0.165", "0.175 (Default)", "0.185", "0.200", "0.300", "0.500", "0.700 (Slow)"}
+FastAttackSelected = "0.175 (Default)"
+Main_Setting:addDropdown("Fast Attack Delay", FastAttackSelected, AttackList, function(Value)
+    FastAttackSelected = Value
+end)
+
+spawn(function()
+    while task.wait() do
+        if FastAttackSelected == "0.100 (Risk)" then
+            FastAttackDelay = 0.1
+        elseif FastAttackSelected == "0.165" then
+            FastAttackDelay = 0.165
+        elseif FastAttackSelected == "0.175 (Default)" then
+            FastAttackDelay = 0.175
+        elseif FastAttackSelected == "0.185" then
+            FastAttackDelay = 0.185
+        elseif FastAttackSelected == "0.200" then
+            FastAttackDelay = 0.2
+        elseif FastAttackSelected == "0.300" then
+            FastAttackDelay = 0.3
+        elseif FastAttackSelected == "0.500" then
+            FastAttackDelay = 0.5
+        elseif FastAttackSelected == "0.700 (Slow)" then
+            FastAttackDelay = 0.7
+        end
+    end
+end)
+
+--// BRING MOBS
+function BringMonster(TargetName, TargetCFrame)
+    local sethiddenproperty = sethiddenproperty or (function(...) return ... end)
+    local TweenService = game:GetService("TweenService")
+    for i,v in pairs(game:GetService("Workspace").Enemies:GetChildren()) do
+        if v.Name and string.lower(v.Name):find(string.lower(TargetName)) then
+            if v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 and v:FindFirstChild("HumanoidRootPart") then
+                local ok, plrHRP = pcall(function() return game.Players.LocalPlayer.Character.HumanoidRootPart end)
+                if ok and plrHRP and (v.HumanoidRootPart.Position - plrHRP.Position).Magnitude < tonumber(bringfrec) then
+                    pcall(function()
+                        -- Stop momentum and tween the mob to the target position (gentler than instant teleport)
+                        pcall(function() v.HumanoidRootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+                        TweenService:Create(v.HumanoidRootPart, TweenInfo.new(0.35, Enum.EasingStyle.Linear), {CFrame = TargetCFrame}):Play()
+                        v.HumanoidRootPart.CanCollide = false
+                        v.HumanoidRootPart.Size = Vector3.new(60, 60, 60)
+                        v.HumanoidRootPart.Transparency = 1
+                        v.Humanoid:ChangeState(11)
+                        if v.Humanoid:FindFirstChild("Animator") then
+                            v.Humanoid.Animator:Destroy()
+                        end
+                    end)
+                end
+            end
+        end
+    end
+    pcall(sethiddenproperty, game.Players.LocalPlayer, "SimulationRadius", math.huge)
+end
+
+bringfrec = 250
+Main_Setting:addTextbox("Bring Mobs Distance (Default 250)", bringfrec, function(Value)
+    bringfrec = Value
+end)
+local BringMobs = true
+Main_Setting:addToggle("Bring Mob", BringMobs, function(Value)
+    BringMobs = Value
+end)
+spawn(function()
+    while task.wait() do
+        if BringMobs and (LevelFarmQuest or LevelFarmNoQuest) then
+            pcall(function()
+                BringMonster(Level_Farm_Name, Level_Farm_CFrame)
+            end)
+        elseif BringMobs and Farm_Bone then
+            pcall(function()
+                BringMonster(Bone_Farm_Name, Bone_Farm_CFrame)
+            end)
+        elseif BringMobs and Farm_Ectoplasm then
+            pcall(function()
+                BringMonster(Ecto_Farm_Name, Ecto_Farm_CFrame)
+            end)
+        elseif BringMobs and Nearest_Farm then
+            pcall(function()
+                BringMonster(Nearest_Farm_Name, Nearest_Farm_CFrame)
+            end)
+        elseif BringMobs and (SelectMonster_Quest_Farm or SelectMonster_NoQuest_Farm) then
+            pcall(function()
+                BringMonster(SelectMonster_Farm_Name, SelectMonster_Farm_CFrame)
+            end)
+        elseif BringMobs and Auto_Farm_Material then
+            pcall(function()
+                BringMonster(Material_Farm_Name, Material_Farm_CFrame)
+            end)
+        elseif BringMobs and (GunMastery_Farm or DevilMastery_Farm) then
+            pcall(function()
+                BringMonster(Mastery_Farm_Name, Mastery_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoRengoku then
+            pcall(function()
+                BringMonster(Rengoku_Farm_Name, Rengoku_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoCakePrince then
+            pcall(function()
+                BringMonster(CakePrince_Farm_Name, CakePrince_Farm_CFrame)
+            end)
+        elseif BringMobs and _G.AutoDoughKing then
+            pcall(function()
+                BringMonster(DoughKing_Farm_Name, DoughKing_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoCitizen then
+            pcall(function()
+                BringMonster(Citizen_Farm_Name, Citizen_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoEvoRace then
+            pcall(function()
+                BringMonster(EvoV2_Farm_Name, EvoV2_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoBartilo then
+            pcall(function()
+                BringMonster(Bartilo_Farm_Name, Bartilo_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoSoulGuitar then
+            pcall(function()
+                BringMonster(SoulGuitar_Farm_Name, SoulGuitar_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoMusketeer then
+            pcall(function()
+                BringMonster(Musketere_Farm_Name, Musketere_Farm_CFrame)
+            end)
+          
+        elseif BringMobs and AutoTrain then
+            pcall(function()
+                BringMonster(Ancient_Farm_Name, Ancient_Farm_CFrame)
+            end)
+        elseif BringMobs and AutoPirateCastle then
+            pcall(function()
+                BringMonster(PirateCastle_Name, PirateCastle_CFrame)
+            end)
+        elseif BringMobs and AutoTyrant then
+            pcall(function()
+                BringMonster(Tyrant_Farm_Name, Tyrant_Farm_CFrame)
+            end)
+        end
+    end
+end)
+
+-- Auto V4 Function
+AutoV4 = false
+Main_Setting:addToggle('Auto V4', AutoV4, function(Value)
+    AutoV4 = Value
+end)
+
+spawn(function()
+    while task.wait(0.1) do
+        if AutoV4 then
+            pcall(function()
+                local playerGui = game.Players.LocalPlayer.PlayerGui
+                if playerGui and playerGui:FindFirstChild("Main") and playerGui.Main:FindFirstChild("RaceEnergy") then
+                    local raceEnergy = playerGui.Main.RaceEnergy
+                    if raceEnergy:FindFirstChild("Fill") and raceEnergy.Fill:FindFirstChild("Trans") then
+                        local trans = raceEnergy.Fill.Trans
+                        if trans.Size.X.Scale >= 1 then
+                            local vim = game:GetService("VirtualInputManager")
+                            vim:SendKeyEvent(true, Enum.KeyCode.Y, false, game)
+                            task.wait(0.1)
+                            vim:SendKeyEvent(false, Enum.KeyCode.Y, false, game)
+                            task.wait(1)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Auto V3 Function
+AutoV3 = false
+Main_Setting:addToggle('Auto V3', AutoV3, function(Value)
+    AutoV3 = Value
+end)
+
+spawn(function()
+    while task.wait(0.1) do
+        if AutoV3 then
+            pcall(function()
+                local vim = game:GetService("VirtualInputManager")
+                vim:SendKeyEvent(true, Enum.KeyCode.T, false, game)
+                task.wait(0.1)
+                vim:SendKeyEvent(false, Enum.KeyCode.T, false, game)
+                task.wait(1)
+            end)
+        end
+    end
+end)
+
+-- Other settings
+ByPassTP = true
+Main_Setting:addToggle("Bypass Teleport", ByPassTP, function(Value)
+    ByPassTP = Value
+end)
+
+-- No Clip
+_G.NoClip = false
+Main_Setting:addToggle("No Clip", _G.NoClip, function(Value)
+    _G.NoClip = Value
+end)
+
+game:GetService("RunService").Stepped:Connect(function()
+    if _G.NoClip then
+        local Player = game.Players.LocalPlayer
+        if Player.Character then
+            for _, v in pairs(Player.Character:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+-- Auto Set Spawn
+local AutoSetSpawn = true
+Main_Setting:addToggle('Set Spawn Point', AutoSetSpawn, function(Value)
+    AutoSetSpawn = Value
+end)
+
+spawn(function()
+    while wait() do
+        if AutoSetSpawn then
+            local current = game.Players.LocalPlayer.Data.LastSpawnPoint.Value
+            local args = {
+                [1] = "SetLastSpawnPoint",
+                [2] = current
+            }
+            game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer(unpack(args))
+        end
+    end
+end)
 
 -- Debug Button
 Main_Setting:addButton('Debug Info', function()
@@ -11083,3 +11216,8 @@ spawn(function()
         end
     end
 end)
+
+-- Start the optimized fast-attack loop on load if the global flag is enabled
+if getgenv().FastAttack then
+    startFastAttackLoop()
+end
