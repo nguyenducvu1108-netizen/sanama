@@ -4060,17 +4060,17 @@ spawn(function()
     end
 end)
 
---// Bone Farm
-local Bone_Farm = Other_Farm:addMenu('#Bone Farm')
-local BoneFarmStatus = Bone_Farm:addLabel("")
+--// Bone Farm - Sửa lại thành label section thay vì menu con
+local Bone_Farm_Section = Other_Farm:addSection('Bone Farm')
+local BoneFarmStatus = Bone_Farm_Section:addLabel("")
 
 getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
 getgenv().BoneFarmWithoutQuest = getgenv().BoneFarmWithoutQuest or false
 Farm_Bone = Farm_Bone or false
 Auto_Trade_Bone = Auto_Trade_Bone or false
 
--- Thêm toggle Buy Random Bone vào menu Bone Farm
-Bone_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
+-- Thêm toggle Buy Random Bone trực tiếp vào Other_Farm
+Other_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
     Auto_Trade_Bone = Value
     while Auto_Trade_Bone do 
         wait()
@@ -4084,11 +4084,48 @@ Bone_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
     end
 end)
 
-Bone_Farm:addToggle('Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
+-- Các toggle khác thêm trực tiếp vào Other_Farm
+Other_Farm:addToggle('Bone Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
     getgenv().BoneFarmWithQuest = Value
 end)
-Bone_Farm:addToggle('Farm Without Quest', getgenv().BoneFarmWithoutQuest, function(Value)
+
+Other_Farm:addToggle('Bone Farm Without Quest', getgenv().BoneFarmWithoutQuest, function(Value)
     getgenv().BoneFarmWithoutQuest = Value
+end)
+
+Other_Farm:addToggle('Auto Bone Farm', Farm_Bone, function(Value)
+    Farm_Bone = Value
+    CancelTween(Farm_Bone)
+end)
+
+-- Hoặc nếu muốn nhóm lại, dùng section thay vì menu
+local BoneFarmOptions = Other_Farm:addSection('Bone Farm Options')
+
+BoneFarmOptions:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
+    Auto_Trade_Bone = Value
+    while Auto_Trade_Bone do 
+        wait()
+        local args = {   
+            [1] = "Bones",   
+            [2] = "Buy",
+            [3] = 1,
+            [4] = 1
+        }
+        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+    end
+end)
+
+BoneFarmOptions:addToggle('Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
+    getgenv().BoneFarmWithQuest = Value
+end)
+
+BoneFarmOptions:addToggle('Farm Without Quest', getgenv().BoneFarmWithoutQuest, function(Value)
+    getgenv().BoneFarmWithoutQuest = Value
+end)
+
+BoneFarmOptions:addToggle('Auto Bone Farm', Farm_Bone, function(Value)
+    Farm_Bone = Value
+    CancelTween(Farm_Bone)
 end)
 
 spawn(function()
@@ -4154,12 +4191,6 @@ local function AcceptBoneQuest()
         end
     end
 end
-
--- Auto Bone Farm toggle
-Bone_Farm:addToggle('Auto Bone Farm', Farm_Bone, function(Value)
-    Farm_Bone = Value
-    CancelTween(Farm_Bone)
-end)
 
 spawn(function()
     while task.wait() do
