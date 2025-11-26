@@ -4060,20 +4060,16 @@ spawn(function()
     end
 end)
 
---// Bone Farm - Sửa lại thành label section thay vì menu con
-local Bone_Farm_Section = Other_Farm:addSection('Bone Farm')
-local BoneFarmStatus = Bone_Farm_Section:addLabel("")
+--// OTHER FARM
+local Other_Farm = Farm_Left:addMenu('#Other Farm')
 
-getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
-getgenv().BoneFarmWithoutQuest = getgenv().BoneFarmWithoutQuest or false
-Farm_Bone = Farm_Bone or false
-Auto_Trade_Bone = Auto_Trade_Bone or false
+-- Add labels to show current quest status
+local BoneQuestStatus = Other_Farm:addLabel("Quest Status: Not Started")
 
--- Thêm toggle Buy Random Bone trực tiếp vào Other_Farm
 Other_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
     Auto_Trade_Bone = Value
-    while Auto_Trade_Bone do 
-        wait()
+
+    while Auto_Trade_Bone do wait()
         local args = {   
             [1] = "Bones",   
             [2] = "Buy",
@@ -4084,7 +4080,15 @@ Other_Farm:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
     end
 end)
 
--- Các toggle khác thêm trực tiếp vào Other_Farm
+Other_Farm:addToggle('Bones Farm (Third Sea)', Farm_Bone, function(Value)
+    Farm_Bone = Value
+    CancelTween(Farm_Bone)
+end)
+
+-- Add option to accept quest when farming bones
+getgenv().BoneFarmWithQuest = getgenv().BoneFarmWithQuest or false
+getgenv().BoneFarmWithoutQuest = getgenv().BoneFarmWithoutQuest or false
+
 Other_Farm:addToggle('Bone Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
     getgenv().BoneFarmWithQuest = Value
 end)
@@ -4093,69 +4097,56 @@ Other_Farm:addToggle('Bone Farm Without Quest', getgenv().BoneFarmWithoutQuest, 
     getgenv().BoneFarmWithoutQuest = Value
 end)
 
-Other_Farm:addToggle('Auto Bone Farm', Farm_Bone, function(Value)
-    Farm_Bone = Value
-    CancelTween(Farm_Bone)
-end)
-
--- Hoặc nếu muốn nhóm lại, dùng section thay vì menu
-local BoneFarmOptions = Other_Farm:addSection('Bone Farm Options')
-
-BoneFarmOptions:addToggle("Buy Random Bone", Auto_Trade_Bone, function(Value)
-    Auto_Trade_Bone = Value
-    while Auto_Trade_Bone do 
-        wait()
-        local args = {   
-            [1] = "Bones",   
-            [2] = "Buy",
-            [3] = 1,
-            [4] = 1
-        }
-        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer(unpack(args))
+-- Function to update quest status display
+local function UpdateBoneQuestStatus()
+    local PlayerGui = game:GetService("Players").LocalPlayer.PlayerGui
+    local hasQuestVisible = false
+    local questText = ""
+    
+    pcall(function() 
+        hasQuestVisible = PlayerGui.Main and PlayerGui.Main.Quest and PlayerGui.Main.Quest.Visible 
+        if hasQuestVisible then
+            questText = PlayerGui.Main.Quest.Container.QuestTitle.Title.Text or ""
+        end
+    end)
+    
+    if hasQuestVisible then
+        BoneQuestStatus:Refresh("Quest Status: " .. questText)
+    else
+        BoneQuestStatus:Refresh("Quest Status: No Active Quest")
     end
-end)
+end
 
-BoneFarmOptions:addToggle('Farm With Quest', getgenv().BoneFarmWithQuest, function(Value)
-    getgenv().BoneFarmWithQuest = Value
-end)
-
-BoneFarmOptions:addToggle('Farm Without Quest', getgenv().BoneFarmWithoutQuest, function(Value)
-    getgenv().BoneFarmWithoutQuest = Value
-end)
-
-BoneFarmOptions:addToggle('Auto Bone Farm', Farm_Bone, function(Value)
-    Farm_Bone = Value
-    CancelTween(Farm_Bone)
-end)
-
+-- Auto update quest status
 spawn(function()
     while task.wait(1) do
-        local ok, resp = pcall(function()
-            return "Bone Farm Active - Kill Posessed Mummies"
-        end)
-        if ok then
-            BoneFarmStatus:Refresh("Status: "..resp)
-        else
-            BoneFarmStatus:Refresh("Status: Unable to get info")
+        if getgenv().BoneFarmWithQuest or getgenv().BoneFarmWithoutQuest or Farm_Bone then
+            UpdateBoneQuestStatus()
         end
     end
 end)
 
 local LastAcceptTime = 0
 local ACCEPT_COOLDOWN = 2 -- giây
+
+-- Function to accept the Bone/Haunted quest
 local function AcceptBoneQuest()
     if tick() - LastAcceptTime < ACCEPT_COOLDOWN then return end
     LastAcceptTime = tick()
 
+    -- Quest details for Bone Farm - HauntedQuest2 for Posessed Mummy
     local NameQuest = "HauntedQuest2"
     local QuestLv = 2
     local CFrameQ = CFrame.new(-9516.9931640625, 178.00651550293, 6078.4653320313)
+    local QuestNPC = "Ice Cream Commander"
+    local TargetMonster = "Posessed Mummy"
 
     local PlayerGui = game:GetService("Players").LocalPlayer.PlayerGui
     local hasQuestVisible = false
     pcall(function() hasQuestVisible = PlayerGui.Main and PlayerGui.Main.Quest and PlayerGui.Main.Quest.Visible end)
 
     if not hasQuestVisible then
+        -- No quest active, go to NPC and accept
         if ByPassTP then
             pcall(BTP, CFrameQ)
         else
@@ -4165,18 +4156,24 @@ local function AcceptBoneQuest()
         if (CFrameQ.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 12 then
             pcall(function()
                 game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StartQuest", NameQuest, QuestLv)
+                UpdateBoneQuestStatus()
             end)
         end
         return
     end
 
+    -- Check current quest text
     local questText = ""
     pcall(function()
         questText = PlayerGui.Main.Quest.Container.QuestTitle.Title.Text or ""
     end)
 
-    if not string.find(questText, "Posessed Mummy") then
-        pcall(function() game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest") end)
+    -- If current quest is not the Bone quest, abandon and accept correct one
+    if not (string.find(questText, "Posessed Mummy") or string.find(questText, "Haunted")) then
+        pcall(function() 
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest") 
+            wait(0.2)
+        end)
         wait(0.4)
         if ByPassTP then
             pcall(BTP, CFrameQ)
@@ -4187,74 +4184,92 @@ local function AcceptBoneQuest()
         if (CFrameQ.Position - game.Players.LocalPlayer.Character.HumanoidRootPart.Position).Magnitude <= 12 then
             pcall(function()
                 game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("StartQuest", NameQuest, QuestLv)
+                UpdateBoneQuestStatus()
             end)
         end
     end
 end
 
+-- Manual quest controls
+Other_Farm:addButton("Accept Bone Quest", function()
+    AcceptBoneQuest()
+end)
+
+Other_Farm:addButton("Abandon Current Quest", function()
+    pcall(function() 
+        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("AbandonQuest") 
+        UpdateBoneQuestStatus()
+    end)
+end)
+
+-- Show current bone count
+local BoneCountLabel = Other_Farm:addLabel("Bones: 0")
+
+spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            local bones = game:GetService("Players").LocalPlayer.Data:FindFirstChild("Bones")
+            if bones then
+                BoneCountLabel:Refresh("Bones: " .. tostring(bones.Value))
+            end
+        end)
+    end
+end)
+
 spawn(function()
     while task.wait() do
-        if not Farm_Bone then
-            task.wait(0.2)
-        else
+        if Farm_Bone then
             pcall(function()
+                local boneframe = CFrame.new(-9508.5673828125, 142.1398468017578, 5737.3603515625)
+                if ByPassTP then
+                    BTP(boneframe)
+                elseif not ByPassTP then
+                    Tween(boneframe)
+                end
+                  
+                -- If user enabled quest-accept for bones, try to accept quest first
                 if getgenv().BoneFarmWithQuest then
-                    AcceptBoneQuest()
+                    pcall(AcceptBoneQuest)
                     wait(0.5)
                 end
 
-                local workspaceEnemies = game:GetService("Workspace"):FindFirstChild("Enemies")
-                local rp = game:GetService("ReplicatedStorage")
-                
-                -- Check for bone mobs in workspace
-                if workspaceEnemies then
-                    for i,v in pairs(workspaceEnemies:GetChildren()) do
-                        if Farm_Bone and v:FindFirstChild("HumanoidRootPart") and v:FindFirstChild("Humanoid") and v.Humanoid.Health > 0 then
-                            if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy" then
-                                repeat
-                                    game:GetService("RunService").Heartbeat:wait()
-                                    EquipTool(SelectWeapon)
-                                    pcall(Tween, v.HumanoidRootPart.CFrame * Farm_Mode)
-                                    if v:FindFirstChild("HumanoidRootPart") then
-                                        v.HumanoidRootPart.CanCollide = false
-                                        v.HumanoidRootPart.Size = Vector3.new(60,60,60)
-                                        v.HumanoidRootPart.Transparency = 1
-                                    end
-                                    pcall(function()
-                                        v.Humanoid:ChangeState(11)
-                                        v.Humanoid:ChangeState(14)
-                                    end)
-                                    Bone_Farm_Name = v.Name
-                                    Bone_Farm_CFrame = v.HumanoidRootPart.CFrame
-                                    AutoClick()
-                                until not Farm_Bone or not v.Parent or (v.Humanoid and v.Humanoid.Health <= 0)
-                            end
+                for i,v in pairs(game.Workspace.Enemies:GetChildren()) do
+                    if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                        if v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name =="Demonic Soul" or v.Name == "Posessed Mummy" then
+                            repeat game:GetService("RunService").Heartbeat:wait()
+                                EquipTool(SelectWeapon)
+                                Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
+                                v.HumanoidRootPart.CanCollide = false
+                                v.HumanoidRootPart.Size = Vector3.new(60,60,60)
+                                v.HumanoidRootPart.Transparency = 1
+                                Bone_Farm_Name = v.Name
+                                Bone_Farm_CFrame = v.HumanoidRootPart.CFrame
+                                AutoClick()
+                            until not Farm_Bone or not v.Parent or v.Humanoid.Health <= 0 or not game.Workspace.Enemies:FindFirstChild(v.Name)
                         end
                     end
                 end
-
-                -- Check for bone mobs in replicated storage
-                for i,v in pairs(rp:GetChildren()) do
-                    if Farm_Bone and (v.Name == "Reborn Skeleton" or v.Name == "Living Zombie" or v.Name == "Demonic Soul" or v.Name == "Posessed Mummy") then
-                        if v:FindFirstChild("HumanoidRootPart") then
-                            pcall(Tween, v.HumanoidRootPart.CFrame * Farm_Mode)
-                        end
-                    end
-                end
-
-                -- If no enemies found, go to bone farming spot
-                if not workspaceEnemies or workspaceEnemies:FindFirstChild("Reborn Skeleton") == nil and workspaceEnemies:FindFirstChild("Living Zombie") == nil and workspaceEnemies:FindFirstChild("Demonic Soul") == nil and workspaceEnemies:FindFirstChild("Posessed Mummy") == nil then
-                    local bonePos = CFrame.new(-9508.5673828125, 142.1398468017578, 5737.3603515625)
-                    if ByPassTP then
-                        pcall(BTP, bonePos)
-                    else
-                        pcall(Tween, bonePos)
+                for i,v in pairs(game:GetService("ReplicatedStorage"):GetChildren()) do
+                    if v.Name == "Reborn Skeleton" then
+                        Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
+                    elseif v.Name == "Living Zombie" then
+                        Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
+                    elseif v.Name == "Demonic Soul" then
+                        Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
+                    elseif v.Name == "Posessed Mummy" then
+                        Tween(v.HumanoidRootPart.CFrame * Farm_Mode)
                     end
                 end
             end)
         end
     end
 end)
+
+-- Additional quest information display
+Other_Farm:addLabel("Quest Info: HauntedQuest2 (Lv. 2)")
+Other_Farm:addLabel("NPC: Ice Cream Commander")
+Other_Farm:addLabel("Location: -9516, 178, 6078")
+Other_Farm:addLabel("Target: Posessed Mummy")
 Other_Farm:addToggle('Nearest Farm', Nearest_Farm, function(Value)
     Nearest_Farm = Value
     CancelTween(Nearest_Farm)
